@@ -53,7 +53,7 @@ struct CallStack
   end
 
   {% if flag?(:gnu) && flag?(:i686) %}
-    # This is only used for the workaround described in `Exception.unwind`
+    # This is only used for the workaround described in `CallStack.unwind`
     @@makecontext_range : Range(Void*, Void*)?
 
     def self.makecontext_range
@@ -158,9 +158,9 @@ struct CallStack
     show_full_info = ENV["CRYSTAL_CALLSTACK_FULL_INFO"]? == "1"
 
     @callstack.compact_map do |ip|
-      pc = CallStack.decode_address(ip)
+      fname_ptr, pc = CallStack.decode_address(ip)
 
-      file, line, column = CallStack.decode_line_number(pc)
+      file, line, column = CallStack.decode_line_number(fname_ptr, pc)
 
       if file && file != "??"
         next if @@skip.includes?(file)
@@ -171,7 +171,7 @@ struct CallStack
         file_line_column = "#{file}:#{line}:#{column}"
       end
 
-      if name = CallStack.decode_function_name(pc)
+      if name = CallStack.decode_function_name(fname_ptr, pc)
         function = name
       elsif frame = CallStack.decode_frame(ip)
         _, sname = frame
@@ -216,12 +216,26 @@ struct CallStack
   end
 
   {% if flag?(:darwin) || flag?(:freebsd) || flag?(:linux) || flag?(:openbsd) %}
-    @@dwarf_line_numbers : Debug::DWARF::LineNumbers?
-    @@dwarf_function_names : Array(Tuple(LibC::SizeT, LibC::SizeT, String))?
+    class ElfInfo
+      property fname : String
+      property base_address : UInt64|UInt32|Nil
+      property dwarf_line_numbers : Debug::DWARF::LineNumbers?
+      property dwarf_function_names : Array(Tuple(LibC::SizeT, LibC::SizeT, String))?
+      def initialize(@fname)
+      end
+    end
+    protected class_getter(elfs) { {} of UInt8* => ElfInfo }
 
-    protected def self.decode_line_number(pc)
-      read_dwarf_sections unless @@dwarf_line_numbers
-      if ln = @@dwarf_line_numbers
+    protected def self.elf(fname_ptr)
+      elfs[fname_ptr] ||= begin
+        elf_info = ElfInfo.new(fname_ptr.null? ? "" : String.new(fname_ptr))
+        read_dwarf_sections(elf_info)
+        elf_info
+      end
+    end
+
+    protected def self.decode_line_number(fname_ptr, pc)
+      if ln = elf(fname_ptr).dwarf_line_numbers
         if row = ln.find(pc)
           path = "#{row.directory}/#{row.file}"
           return {path, row.line, row.column}
@@ -230,9 +244,8 @@ struct CallStack
       {"??", 0, 0}
     end
 
-    protected def self.decode_function_name(pc)
-      read_dwarf_sections unless @@dwarf_function_names
-      if fn = @@dwarf_function_names
+    protected def self.decode_function_name(fname_ptr, pc)
+      if fn = elf(fname_ptr).dwarf_function_names
         fn.each do |(low_pc, high_pc, function_name)|
           return function_name if low_pc <= pc <= high_pc
         end
@@ -269,10 +282,10 @@ struct CallStack
     {% if flag?(:darwin) %}
       @@image_slide : LibC::Long?
 
-      protected def self.read_dwarf_sections
+      protected def self.read_dwarf_sections(elf_info)
         locate_dsym_bundle do |mach_o|
           mach_o.read_section?("__debug_line") do |sh, io|
-            @@dwarf_line_numbers = Debug::DWARF::LineNumbers.new(io, sh.size)
+            elf_info.dwarf_line_numbers = Debug::DWARF::LineNumbers.new(io, sh.size)
           end
 
           strings = mach_o.read_section?("__debug_str") do |sh, io|
@@ -294,7 +307,7 @@ struct CallStack
               end
             end
 
-            @@dwarf_function_names = names
+            elf_info.dwarf_function_names = names
           end
         end
       end
@@ -305,7 +318,7 @@ struct CallStack
       #
       # See https://en.wikipedia.org/wiki/Address_space_layout_randomization
       protected def self.decode_address(ip)
-        ip.address - image_slide
+        {Pointer(UInt8).null, ip.address - image_slide}
       end
 
       # Searches the companion dSYM bundle with the DWARF sections for the
@@ -364,16 +377,16 @@ struct CallStack
         LibC::Long.new(0)
       end
     {% else %}
-      @@base_address : UInt64|UInt32|Nil
 
-      protected def self.read_dwarf_sections
-        Debug::ELF.open(PROGRAM_NAME) do |elf|
+      protected def self.read_dwarf_sections(elf_info)
+        return if elf_info.fname.empty?
+        Debug::ELF.open(elf_info.fname) do |elf|
           elf.read_section?(".text") do |sh, _|
-            @@base_address = sh.addr - sh.offset
+            elf_info.base_address = sh.addr - sh.offset
           end
 
           elf.read_section?(".debug_line") do |sh, io|
-            @@dwarf_line_numbers = Debug::DWARF::LineNumbers.new(io, sh.size)
+            elf_info.dwarf_line_numbers = Debug::DWARF::LineNumbers.new(io, sh.size)
           end
 
           strings = elf.read_section?(".debug_str") do |sh, io|
@@ -395,9 +408,10 @@ struct CallStack
               end
             end
 
-            @@dwarf_function_names = names
+            elf_info.dwarf_function_names = names
           end
         end
+      rescue e : Errno
       end
 
       # DWARF uses fixed addresses but some platforms (e.g., OpenBSD or Linux
@@ -408,23 +422,24 @@ struct CallStack
       # See https://en.wikipedia.org/wiki/Address_space_layout_randomization
       protected def self.decode_address(ip)
         if LibC.dladdr(ip, out info) != 0
-          unless info.dli_fbase.address == @@base_address
-            return ip.address - info.dli_fbase.address
+          unless info.dli_fbase.address == elf(info.dli_fname).base_address
+            ip -= info.dli_fbase.address
           end
+          return {info.dli_fname, ip.address}
         end
-        ip.address
+        {Pointer(UInt8).null, ip.address}
       end
     {% end %}
   {% else %}
-    def self.decode_address(ip)
-      ip
+    protected  def self.decode_address(ip)
+      {Pointer(UInt8).null, ip.address}
     end
 
-    def self.decode_line_number(pc)
+    protected  def self.decode_line_number(fname, pc)
       {"??", 0, 0}
     end
 
-    def self.decode_function_name(pc)
+    protected def self.decode_function_name(fname, pc)
       nil
     end
   {% end %}
