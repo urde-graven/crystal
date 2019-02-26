@@ -243,6 +243,8 @@ module Crystal
     # in one branch of an `if` expression.
     getter(nil_var) { Var.new("<nil_var>", nil_type) }
 
+    getter(library_name) { "crystal" }
+
     # Defines a predefined constant in the Crystal module, such as BUILD_DATE and VERSION.
     private def define_crystal_constants
       if build_commit = Crystal::Config.build_commit

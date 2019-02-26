@@ -231,7 +231,7 @@ module Crystal
     end
 
     def get_current_debug_scope(location)
-      if context.fun.name == MAIN_NAME
+      if context.fun.name == @program.main_name
         main_scopes = (@main_scopes ||= {} of {String, String} => LibLLVMExt::Metadata)
         file, dir = file_and_dir(location.filename)
         main_scopes[{file, dir}] ||= begin
@@ -268,7 +268,7 @@ module Crystal
     def emit_main_def_debug_metadata(main_fun, filename)
       file, dir = file_and_dir(filename)
       scope = di_builder.create_file(file, dir)
-      fn_metadata = di_builder.create_function(scope, MAIN_NAME, MAIN_NAME, scope,
+      fn_metadata = di_builder.create_function(scope, @program.main_name, @program.main_name, scope,
         0, fun_metadata_type, true, true, 0, LLVM::DIFlags::Zero, false, main_fun)
       fun_metadatas[main_fun] = fn_metadata
     end
