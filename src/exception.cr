@@ -69,6 +69,34 @@ class Exception
   end
 end
 
+class ForeignException < Exception
+  def initialize(@unwind_exception : LibUnwind::Exception*, message = "Foreign exception")
+    super(message)
+  end
+
+  def unwind_exception
+    raise "Already reraised" if @unwind_exception.null?
+    @unwind_exception
+  end
+
+  def to_unsafe
+    unwind_exception
+  end
+
+  def reraise : NoReturn
+    exception, @unwind_exception = unwind_exception, Pointer(LibUnwind::Exception).null
+    __crystal_raise(exception)
+  end
+
+  def finalize
+    __crystal_delete_exception(@unwind_exception) unless @unwind_exception.null?
+  end
+
+  def exception_class
+    CallStack.decode_exception_class(unwind_exception.value.exception_class)
+  end
+end
+
 # Raised when the given index is invalid.
 #
 # ```

@@ -33,6 +33,9 @@ struct CallStack
     dir
   end
 
+  # _Unwind_Exception class (UInt64) generated from name of main "library" ("Crystal")
+  UNWIND_EXCEPTION_CLASS = 7165923497316606834_u64 # "Cr}90.cr"
+
   @@skip = [] of String
 
   def self.skip(filename)
@@ -456,5 +459,14 @@ struct CallStack
         {offset, info.dli_sname}
       end
     end
+  end
+
+  def self.decode_exception_class(except_class : UInt64) : String
+    buf = uninitialized UInt8[8]
+    8.times do |i|
+      buf[7 - i] = except_class.to_u8
+      except_class = except_class >> 8
+    end
+    String.new(buf.to_unsafe, buf.size)
   end
 end

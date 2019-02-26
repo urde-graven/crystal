@@ -106,6 +106,7 @@ lib LibUnwind
 
     fun backtrace = _Unwind_Backtrace((Context, Void*) -> ReasonCode, Void*) : Int32
     fun raise_exception = _Unwind_RaiseException(ucb : ControlBlock*) : ReasonCode
+    fun delete_exception = _Unwind_DeleteException(ucb : ControlBlock*) : Void
     fun vrs_get = _Unwind_VRS_Get(context : Context, regclass : UVRSC, regno : UInt32, representation : UVRSD, valuep : Void*) : UVRSR
     fun vrs_set = _Unwind_VRS_Set(context : Context, regclass : UVRSC, regno : UInt32, representation : UVRSD, valuep : Void*) : UVRSR
     fun __gnu_unwind_frame(ucb : ControlBlock*, context : Context) : ReasonCode
@@ -126,6 +127,7 @@ lib LibUnwind
     fun set_ip = _Unwind_SetIP(context : Context, ip : LibC::SizeT) : LibC::SizeT
     fun set_gr = _Unwind_SetGR(context : Context, index : Int32, value : LibC::SizeT)
     fun raise_exception = _Unwind_RaiseException(ex : Exception*) : ReasonCode
+    fun delete_exception = _Unwind_DeleteException(ex : Exception*) : Void
   {% end %}
 
   {% if flag?(:x86_64) || flag?(:arm) || flag?(:aarch64) %}

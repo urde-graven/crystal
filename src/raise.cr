@@ -133,7 +133,8 @@ end
 
           if actions.includes? LibUnwind::Action::HANDLER_FRAME
             __crystal_unwind_set_gr(context, LibUnwind::EH_REGISTER_0, ucb.address.to_u32)
-            __crystal_unwind_set_gr(context, LibUnwind::EH_REGISTER_1, ucb.value.exception_type_id.to_u32)
+            __crystal_unwind_set_gr(context, LibUnwind::EH_REGISTER_1, ucb.value.exception_class == CallStack::UNWIND_EXCEPTION_CLASS ?
+                                    ucb.value.exception_type_id.to_u32 : ForeignException.crystal_instance_type_id)
             __crystal_unwind_set_ip(context, start + cs_addr)
             #puts "install"
             return LibUnwind::ReasonCode::INSTALL_CONTEXT
@@ -151,7 +152,8 @@ end
     ip = LibUnwind.get_ip(context)
     throw_offset = ip - 1 - start
     lsd = LibUnwind.get_language_specific_data(context)
-    #puts "Personality - actions : #{actions}, start: #{start}, ip: #{ip}, throw_offset: #{throw_offset}"
+    return LibUnwind::ReasonCode::CONTINUE_UNWIND if lsd.null? # if no LSDA, then there are no handlers or cleanups
+    #puts "Personality - actions : #{actions}, start: #{start}, ip: #{ip}, throw_offset: #{throw_offset}, exception_class: #{CallStack.decode_exception_class(exception_class)}"
 
     leb = LEBReader.new(lsd)
     leb.read_uint8               # @LPStart encoding
@@ -169,8 +171,9 @@ end
       action = leb.read_uleb128
       #puts "cs_offset: #{cs_offset}, cs_length: #{cs_length}, cs_addr: #{cs_addr}, action: #{action}"
 
-      if cs_addr != 0
-        if cs_offset <= throw_offset && throw_offset <= cs_offset + cs_length
+      break if cs_offset > throw_offset # the table is sorted, so if we've passed the ip, stop
+      if throw_offset < cs_offset + cs_length
+        if cs_addr != 0 # if ip is present, and has a null landing pad, there are no cleanups or handlers to be run
           if actions.includes? LibUnwind::Action::SEARCH_PHASE
             #puts "found"
             return LibUnwind::ReasonCode::HANDLER_FOUND
@@ -178,12 +181,14 @@ end
 
           if actions.includes? LibUnwind::Action::HANDLER_FRAME
             LibUnwind.set_gr(context, LibUnwind::EH_REGISTER_0, exception_object.address)
-            LibUnwind.set_gr(context, LibUnwind::EH_REGISTER_1, exception_object.value.exception_type_id)
+            LibUnwind.set_gr(context, LibUnwind::EH_REGISTER_1, exception_class == CallStack::UNWIND_EXCEPTION_CLASS ?
+                             exception_object.value.exception_type_id : ForeignException.crystal_instance_type_id)
             LibUnwind.set_ip(context, start + cs_addr)
             #puts "install"
             return LibUnwind::ReasonCode::INSTALL_CONTEXT
           end
         end
+        break
       end
     end
 
@@ -203,8 +208,25 @@ end
   end
 
   # :nodoc:
-  fun __crystal_get_exception(unwind_ex : LibUnwind::Exception*) : UInt64
-    unwind_ex.value.exception_object
+  fun __crystal_get_exception(unwind_ex : LibUnwind::Exception*) : Int32*
+    if unwind_ex.value.exception_class == CallStack::UNWIND_EXCEPTION_CLASS
+      Pointer(Int32).new(unwind_ex.value.exception_object)
+    else
+      __get_foreign_exception(unwind_ex)
+    end
+  end
+
+  # :nodoc:
+  fun __crystal_delete_exception(unwind_ex : LibUnwind::Exception*) : Void
+    LibUnwind.delete_exception(unwind_ex)
+  end
+
+  # :nodoc:
+  @[NoInline]
+  private def __get_foreign_exception(unwind_ex : LibUnwind::Exception*)
+    exception = ForeignException.new(unwind_ex)
+    exception.callstack ||= CallStack.new
+    Pointer(Int32).new(exception.object_id)
   end
 
   # Raises the *exception*.
@@ -220,7 +242,7 @@ end
 
     exception.callstack ||= CallStack.new
     unwind_ex = Pointer(LibUnwind::Exception).malloc
-    unwind_ex.value.exception_class = LibC::SizeT.zero
+    unwind_ex.value.exception_class = CallStack::UNWIND_EXCEPTION_CLASS
     unwind_ex.value.exception_cleanup = LibC::SizeT.zero
     unwind_ex.value.exception_object = exception.object_id
     unwind_ex.value.exception_type_id = exception.crystal_type_id

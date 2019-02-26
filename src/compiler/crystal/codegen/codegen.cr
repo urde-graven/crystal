@@ -6,15 +6,16 @@ require "../program"
 require "./llvm_builder_helper"
 
 module Crystal
-  MAIN_NAME           = "__crystal_main"
-  RAISE_NAME          = "__crystal_raise"
-  RAISE_OVERFLOW_NAME = "__crystal_raise_overflow"
-  MALLOC_NAME         = "__crystal_malloc64"
-  MALLOC_ATOMIC_NAME  = "__crystal_malloc_atomic64"
-  REALLOC_NAME        = "__crystal_realloc64"
-  GET_EXCEPTION_NAME  = "__crystal_get_exception"
-
   class Program
+    getter(main_name)             { "__#{library_name}_main" }
+    getter(malloc_name)           { "__#{library_name}_malloc64" }
+    getter(malloc_atomic_name)    { "__#{library_name}_malloc_atomic64" }
+    getter(realloc_name)          { "__#{library_name}_realloc64" }
+    getter(raise_name)            { "__#{library_name}_raise" }
+    getter(raise_overflow_name)   { "__#{library_name}_raise_overflow" }
+    getter(get_exception_name)    { "__#{library_name}_get_exception" }
+    getter(delete_exception_name) { "__#{library_name}_delete_exception" }
+
     def run(code, filename = nil, debug = Debug::Default)
       parser = Parser.new(code)
       parser.filename = filename
@@ -26,7 +27,7 @@ module Crystal
 
     def evaluate(node, debug = Debug::Default)
       llvm_mod = codegen(node, single_module: true, debug: debug)[""].mod
-      main = llvm_mod.functions[MAIN_NAME]
+      main = llvm_mod.functions[main_name]
 
       main_return_type = main.return_type
 
@@ -89,6 +90,7 @@ module Crystal
 
     include LLVMBuilderHelper
 
+    getter program : Crystal::Program
     getter llvm_mod : LLVM::Module
     getter builder : CrystalLLVMBuilder
     getter main : LLVM::Function
@@ -158,7 +160,7 @@ module Crystal
       @llvm_id = LLVMId.new(@program)
       @main_ret_type = node.type? || @program.nil_type
       ret_type = @llvm_typer.llvm_return_type(@main_ret_type)
-      @main = @llvm_mod.functions.add(MAIN_NAME, [llvm_context.int32, llvm_context.void_pointer.pointer], ret_type)
+      @main = @llvm_mod.functions.add(program.main_name, [llvm_context.int32, llvm_context.void_pointer.pointer], ret_type)
 
       if @program.has_flag? "windows"
         @personality_name = "__CxxFrameHandler3"
@@ -294,8 +296,11 @@ module Crystal
       end
 
       def visit(node : FunDef)
+        program = @codegen.program
         case node.name
-        when MALLOC_NAME, MALLOC_ATOMIC_NAME, REALLOC_NAME, RAISE_NAME, @codegen.personality_name, GET_EXCEPTION_NAME, RAISE_OVERFLOW_NAME
+        when program.malloc_name, program.malloc_atomic_name, program.realloc_name,
+            program.raise_name, @codegen.personality_name, program.get_exception_name,
+            program.delete_exception_name, program.raise_overflow_name
           @codegen.accept node
         end
         false
@@ -1911,36 +1916,36 @@ module Crystal
     end
 
     def crystal_malloc_fun
-      @malloc_fun ||= @main_mod.functions[MALLOC_NAME]?
+      @malloc_fun ||= @main_mod.functions[@program.malloc_name]?
       if malloc_fun = @malloc_fun
-        check_main_fun MALLOC_NAME, malloc_fun
+        check_main_fun @program.malloc_name, malloc_fun
       else
         nil
       end
     end
 
     def crystal_malloc_atomic_fun
-      @malloc_atomic_fun ||= @main_mod.functions[MALLOC_ATOMIC_NAME]?
+      @malloc_atomic_fun ||= @main_mod.functions[@program.malloc_atomic_name]?
       if malloc_fun = @malloc_atomic_fun
-        check_main_fun MALLOC_ATOMIC_NAME, malloc_fun
+        check_main_fun @program.malloc_atomic_name, malloc_fun
       else
         nil
       end
     end
 
     def crystal_realloc_fun
-      @realloc_fun ||= @main_mod.functions[REALLOC_NAME]?
+      @realloc_fun ||= @main_mod.functions[@program.realloc_name]?
       if realloc_fun = @realloc_fun
-        check_main_fun REALLOC_NAME, realloc_fun
+        check_main_fun @program.realloc_name, realloc_fun
       else
         nil
       end
     end
 
     def crystal_raise_overflow_fun
-      @raise_overflow_fun ||= @main_mod.functions[RAISE_OVERFLOW_NAME]?
+      @raise_overflow_fun ||= @main_mod.functions[@program.raise_overflow_name]?
       if raise_overflow_fun = @raise_overflow_fun
-        check_main_fun RAISE_OVERFLOW_NAME, raise_overflow_fun
+        check_main_fun @program.raise_overflow_name, raise_overflow_fun
       else
         raise "BUG: __crystal_raise_overflow is not defined"
       end

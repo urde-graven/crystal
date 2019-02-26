@@ -145,11 +145,11 @@ class Crystal::CodeGenVisitor
         unwind_ex_obj = extract_value lp, 0
         exception_type_id = extract_value lp, 1
 
-        # We call __crystal_get_exception to get the actual crystal `Exception` object.
-        get_exception_fun = main_fun(GET_EXCEPTION_NAME)
+        get_exception_fun    = main_fun(@program.get_exception_name)
+        delete_exception_fun = main_fun(@program.delete_exception_name)
+        get_exception_fun_args    = [bit_cast(unwind_ex_obj, get_exception_fun.params.first.type)]
+        delete_exception_fun_args = [bit_cast(unwind_ex_obj, delete_exception_fun.params.first.type)]
         set_current_debug_location node if @debug.line_numbers?
-        caught_exception_ptr = call get_exception_fun, [bit_cast(unwind_ex_obj, get_exception_fun.params.first.type)]
-        caught_exception = int2ptr caught_exception_ptr, llvm_typer.type_id_pointer
       end
 
       if node_rescues
@@ -202,10 +202,16 @@ class Crystal::CodeGenVisitor
             if a_rescue_name = a_rescue.name
               context.vars = context.vars.dup
 
+              # We call __crystal_get_exception to get the actual crystal `Exception` object,
+              # or new `ForeignException` object.
+              caught_exception = call(get_exception_fun.not_nil!, get_exception_fun_args.not_nil!) unless windows
               # Cast the caught exception to the type restriction, then assign it
-              cast_caught_exception = cast_to caught_exception, a_rescue.type
+              cast_caught_exception = cast_to caught_exception.not_nil!, a_rescue.type
               var = context.vars[a_rescue_name]
               assign var.pointer, var.type, a_rescue.type, cast_caught_exception
+            else
+              # Delete exception by calling __crystal_delete_exception. Necessary for foreign exceptions.
+              call(delete_exception_fun.not_nil!, delete_exception_fun_args.not_nil!) unless windows
             end
 
             accept a_rescue.body
@@ -283,7 +289,7 @@ class Crystal::CodeGenVisitor
       call windows_throw_fun, [llvm_context.void_pointer.null, llvm_context.void_pointer.null]
       unreachable
     else
-      raise_fun = main_fun(RAISE_NAME)
+      raise_fun = main_fun(@program.raise_name)
       codegen_call_or_invoke(node, nil, nil, raise_fun, [bit_cast(unwind_ex_obj.not_nil!, raise_fun.params.first.type)], true, @program.no_return)
     end
   end
