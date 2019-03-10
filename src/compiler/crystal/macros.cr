@@ -358,6 +358,10 @@ module Crystal::Macros
     # Returns a `MacroId` for this character's contents.
     def id : MacroId
     end
+
+    # Same as `Char#ord`
+    def ord : NumberLiteral
+    end
   end
 
   # A string literal.
@@ -1405,6 +1409,35 @@ module Crystal::Macros
     end
   end
 
+  # A function definition.
+  class FunDef < ASTNode
+
+    # Returns the name of this function.
+    def name : MacroId
+    end
+
+    # Returns the arguments of this function.
+    def args : ArrayLiteral(Arg)
+    end
+
+    # Returns the return type of the function, if specified.
+    def return_type : ASTNode | Nop
+    end
+
+    # Returns the body of this method, if specified.
+    def body : ASTNode | Nop
+    end
+
+    # Returns the real name of this function.
+    def real_name : MacroId
+    end
+
+    # Returns `true` if this function has variable number of arguments.
+    def varargs? : BoolLiteral
+    end
+
+  end
+
   # class Self < ASTNode
   # end
 
@@ -1430,9 +1463,6 @@ module Crystal::Macros
   # end
 
   # class LibDef < ASTNode
-  # end
-
-  # class FunDef < ASTNode
   # end
 
   # class TypeDef < ASTNode

@@ -536,6 +536,15 @@ module Crystal
     def to_macro_id
       @value.to_s
     end
+
+    def interpret(method, args, block, interpreter)
+      case method
+      when "ord"
+        interpret_argless_method(method, args) { NumberLiteral.new(value.ord) }
+      else
+        super
+      end
+    end
   end
 
   class StringLiteral
@@ -1305,6 +1314,27 @@ module Crystal
           return ArrayLiteral.new if annotations.nil?
           ArrayLiteral.map(annotations, &.itself)
         end
+      else
+        super
+      end
+    end
+  end
+
+  class FunDef
+    def interpret(method, args, block, interpreter)
+      case method
+      when "name"
+        interpret_argless_method(method, args) { MacroId.new(@name) }
+      when "args"
+        interpret_argless_method(method, args) { ArrayLiteral.map @args, &.itself }
+      when "return_type"
+        interpret_argless_method(method, args) { @return_type || Nop.new }
+      when "body"
+        interpret_argless_method(method, args) { @body || Nop.new }
+      when "real_name"
+        interpret_argless_method(method, args) { MacroId.new(@real_name) }
+      when "varargs?"
+        interpret_argless_method(method, args) { BoolLiteral.new(@varargs) }
       else
         super
       end
