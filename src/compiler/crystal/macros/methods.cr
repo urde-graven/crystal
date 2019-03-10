@@ -489,17 +489,15 @@ module Crystal
     end
 
     def int_bin_op(op, args)
-      if @kind == :f32 || @kind == :f64
-        raise "undefined method '#{op}' for float literal: #{self}"
-      end
-
       NumberLiteral.new(bin_op(op, args) do |me, other|
-        other_kind = args.first.as(NumberLiteral).kind
-        if other_kind == :f32 || other_kind == :f64
+        if me.is_a?(Float)
+          raise "undefined method '#{op}' for float literal: #{self}"
+        end
+        if other.is_a?(Float)
           raise "argument to NumberLiteral##{op} can't be float literal: #{self}"
         end
 
-        yield me.to_i, other.to_i
+        yield me, other
       end)
     end
 
