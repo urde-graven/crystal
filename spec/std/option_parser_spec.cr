@@ -39,10 +39,6 @@ private def expect_capture_optional_option(args_type, flag_type, value = "123",
   expect_capture_optional_option(args_type, flag_type, value, expect_value, expect_args) { }
 end
 
-private def expect_capture_option(args, option, value, expect_args = [] of String)
-  expect_capture_option(args, option, value, expect_args) { }
-end
-
 private def expect_doesnt_capture_option(args, option, expect_args = [] of String)
   flag = false
   OptionParser.parse(args) do |opts|
@@ -52,15 +48,6 @@ private def expect_doesnt_capture_option(args, option, expect_args = [] of Strin
   end
   flag.should be_false
   args.should eq(expect_args)
-end
-
-private def expect_missing_option(option)
-  expect_raises OptionParser::MissingOption do
-    OptionParser.parse([] of String) do |opts|
-      opts.on(option, "some flag") do |flag_value|
-      end
-    end
-  end
 end
 
 private def expect_missing_option(args, option, flag)
