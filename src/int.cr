@@ -237,6 +237,12 @@ struct Int
     end
   end
 
+  def <=>(other : Int) : Int32
+    # Override Number#<=> because when comparing
+    # Int vs Int there's no way we can return `nil`
+    self > other ? 1 : (self < other ? -1 : 0)
+  end
+
   def abs
     self >= 0 ? self : -self
   end
@@ -445,15 +451,15 @@ struct Int
   private DIGITS_UPCASE   = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
   private DIGITS_BASE62   = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-  def to_s
+  def to_s : String
     to_s(10)
   end
 
-  def to_s(io : IO)
+  def to_s(io : IO) : Nil
     to_s(10, io)
   end
 
-  def to_s(base : Int, upcase : Bool = false)
+  def to_s(base : Int, upcase : Bool = false) : String
     raise ArgumentError.new("Invalid base #{base}") unless 2 <= base <= 36 || base == 62
     raise ArgumentError.new("upcase must be false for base 62") if upcase && base == 62
 
@@ -469,7 +475,7 @@ struct Int
     end
   end
 
-  def to_s(base : Int, io : IO, upcase : Bool = false)
+  def to_s(base : Int, io : IO, upcase : Bool = false) : Nil
     raise ArgumentError.new("Invalid base #{base}") unless 2 <= base <= 36 || base == 62
     raise ArgumentError.new("upcase must be false for base 62") if upcase && base == 62
 
